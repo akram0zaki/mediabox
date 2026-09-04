@@ -31,7 +31,10 @@
     "desktop:start": "pnpm desktop:build && electron .",
     "desktop:smoke": "pnpm desktop:build && node desktop/scripts/smoke.mjs",
     "desktop:dist": "pnpm desktop:build && electron-builder",
-    "desktop:check": "tsc -p tsconfig.desktop.json --noEmit"
+    "desktop:check": "tsc -p tsconfig.desktop.json --noEmit",
+    "desktop:dist:win": "pnpm desktop:build && electron-builder --win --x64",
+    "desktop:dist:mac": "pnpm desktop:build && electron-builder --mac",
+    "desktop:dist:linux": "pnpm desktop:build && electron-builder --linux"
   },
   "dependencies": {
     "onnxruntime-node": "^1.29.0"

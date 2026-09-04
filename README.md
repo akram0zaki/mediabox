@@ -96,10 +96,14 @@ The same web app wrapped in Electron, plus a native inference process for the ne
 
 ```bash
 pnpm desktop:start   # build web + main process, launch the app
-pnpm desktop:dist    # package installers into release/ (dmg/zip, nsis/zip, AppImage)
+pnpm desktop:dist    # package for the current platform into release/
+pnpm desktop:dist:win   # Windows: NSIS installer + zip (x64) — can be cross-built from macOS/Linux
+pnpm desktop:dist:mac   # macOS: dmg + zip (Apple silicon; add --x64 for Intel)
+pnpm desktop:dist:linux # Linux: AppImage
 pnpm desktop:smoke   # headless end-to-end check (hidden window)
 ```
 
+- Windows builds use DirectML for the neural engine when available; unsigned installers will show a SmartScreen warning until you sign them (set `CSC_LINK` / `CSC_KEY_PASSWORD` for electron-builder).
 - The app is served from a privileged `app://` scheme so WASM, WebGPU and module loading behave exactly as on the web.
 - The neural engine's models are **not bundled**. The first time you choose *Swap → Neural*, the app explains their licence and downloads them (about 730 MB) into the user data folder: `arcface_w600k_r50.onnx` and `inswapper_128.onnx`, fetched from the FaceFusion assets releases. Set `MEDIABOX_MODEL_DIR` to point at an existing copy.
 - Faces are aligned in the renderer and sent to the main process over IPC as float tensors; results are pasted back with a feathered mask. About 100 ms per face on Apple silicon.
