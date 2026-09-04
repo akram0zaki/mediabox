@@ -34,15 +34,10 @@
     "desktop:check": "tsc -p tsconfig.desktop.json --noEmit"
   },
   "dependencies": {
-    "@mediapipe/tasks-vision": "^1.0.1",
-    "mediabunny": "^1.55.6",
-    "onnxruntime-node": "^1.29.0",
-    "onnxruntime-web": "^1.29.0",
-    "react": "^19.2.8",
-    "react-dom": "^19.2.8",
-    "zustand": "^5.0.15"
+    "onnxruntime-node": "^1.29.0"
   },
   "devDependencies": {
+    "@mediapipe/tasks-vision": "^1.0.1",
     "@types/jpeg-js": "^0.3.7",
     "@types/node": "^24.13.3",
     "@types/react": "^19.2.18",
@@ -51,9 +46,14 @@
     "electron": "^44.2.0",
     "electron-builder": "^26.15.3",
     "jpeg-js": "^0.4.4",
+    "mediabunny": "^1.55.6",
+    "onnxruntime-web": "^1.29.0",
     "oxlint": "^1.79.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
     "typescript": "~6.0.2",
-    "vite": "^8.2.2"
+    "vite": "^8.2.2",
+    "zustand": "^5.0.15"
   },
   "packageManager": "pnpm@10.24.0",
   "pnpm": {
