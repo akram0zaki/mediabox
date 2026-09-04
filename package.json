@@ -1,0 +1,54 @@
+{
+  "name": "mediabox",
+  "version": "0.1.0",
+  "description": "Browser-based photo & video editor with on-device face detection, recognition and masking. Nothing leaves your machine.",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "keywords": [
+    "face-blur",
+    "face-masking",
+    "privacy",
+    "video-editor",
+    "photo-editor",
+    "webcodecs",
+    "webgpu",
+    "onnxruntime",
+    "mediapipe",
+    "on-device"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "lint": "oxlint",
+    "preview": "vite preview",
+    "postinstall": "node scripts/setup-assets.mjs",
+    "setup:assets": "node scripts/setup-assets.mjs"
+  },
+  "dependencies": {
+    "@mediapipe/tasks-vision": "^1.0.1",
+    "mediabunny": "^1.55.6",
+    "onnxruntime-web": "^1.29.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "zustand": "^5.0.15"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.3",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
+    "@vitejs/plugin-react": "^6.1.0",
+    "oxlint": "^1.79.0",
+    "typescript": "~6.0.2",
+    "vite": "^8.2.2"
+  },
+  "packageManager": "pnpm@10.24.0",
+  "pnpm": {
+    "ignoredBuiltDependencies": [
+      "protobufjs"
+    ]
+  }
+}

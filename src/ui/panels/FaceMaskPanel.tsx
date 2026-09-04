@@ -1,0 +1,286 @@
+import { useEffect, useState } from 'react';
+import { faceDetection, type DetectorState, type FaceEngineId } from '../../faces/detector';
+import { faceRecognizer } from '../../faces/recognizer';
+import { useEditor } from '../../state/store';
+import { Segmented } from '../controls/Segmented';
+import { Slider } from '../controls/Slider';
+import { Toggle } from '../controls/Toggle';
+
+function useDetectorState(engine: FaceEngineId): DetectorState {
+  const [state, setState] = useState<DetectorState>(faceDetection.getState(engine));
+  useEffect(() => {
+    faceDetection.load(engine).catch(() => undefined);
+    return faceDetection.subscribe(engine, setState);
+  }, [engine]);
+  return state;
+}
+
+const ENGINE_LABEL: Record<FaceEngineId, string> = { yunet: 'YuNet', blazeface: 'BlazeFace' };
+
+function useRecognizerState(active: boolean): DetectorState {
+  const [state, setState] = useState<DetectorState>(faceRecognizer.status.get());
+  useEffect(() => {
+    if (active) faceRecognizer.load().catch(() => undefined);
+    return faceRecognizer.status.subscribe(setState);
+  }, [active]);
+  return state;
+}
+
+export function FaceMaskPanel() {
+  const asset = useEditor((s) => s.asset);
+  const p = useEditor((s) => s.faceMask);
+  const enabled = useEditor((s) => s.faceMaskEnabled);
+  const setEnabled = useEditor((s) => s.setFaceMaskEnabled);
+  const set = useEditor((s) => s.setFaceMask);
+  const reset = useEditor((s) => s.resetFaceMask);
+  const facesInFrame = useEditor((s) => s.facesInFrame);
+  const detector = useDetectorState(p.detection.engine);
+  const people = useEditor((s) => s.people);
+  const overrides = useEditor((s) => s.faceOverrides);
+  const clearFaceOverrides = useEditor((s) => s.clearFaceOverrides);
+  const renamePerson = useEditor((s) => s.renamePerson);
+  const removePerson = useEditor((s) => s.removePerson);
+  const recognizer = useRecognizerState(people.length > 0 || p.showBoxes);
+  const isVideo = asset?.kind === 'video';
+  const overrideCount = Object.keys(overrides).length;
+
+  return (
+    <div className="panel">
+      <div className="panel-header">
+        <Toggle label="Mask all faces" checked={enabled} onChange={setEnabled} />
+        <button className="btn btn-small btn-ghost" onClick={reset}>
+          Reset
+        </button>
+      </div>
+
+      <div className={`status status-${detector.status}`}>
+        {detector.status === 'loading' && `Loading ${ENGINE_LABEL[p.detection.engine]} on this device…`}
+        {detector.status === 'ready' && (
+          <>
+            {ENGINE_LABEL[p.detection.engine]} ready · {detector.backend} ·{' '}
+            {enabled || p.showBoxes ? `${facesInFrame} face${facesInFrame === 1 ? '' : 's'} in frame` : 'masking off'}
+          </>
+        )}
+        {detector.status === 'error' && `Detector failed: ${detector.error}`}
+        {detector.status === 'idle' && 'Detector idle'}
+      </div>
+
+      <Toggle
+        label="Show faces & pick who to keep clear"
+        hint="Draws detection boxes (preview only). Click a face to keep it clear, mask it, or add the person to your list."
+        checked={p.showBoxes}
+        onChange={(showBoxes) => set({ showBoxes })}
+      />
+      <p className="hint">
+        {p.showBoxes
+          ? 'Click a face in the preview to choose what happens to it. Blue = kept clear, green = masked.'
+          : 'Hold the “compare” button under the preview (or the C key) to see the original frame, even during playback.'}
+      </p>
+
+      <h3 className="section-title">Who to mask</h3>
+      <Segmented
+        value={p.maskMode}
+        onChange={(maskMode) => set({ maskMode })}
+        options={[
+          { value: 'except-people', label: 'All but my people', title: 'Mask everyone except the people listed below' },
+          { value: 'all', label: 'Everyone' },
+          { value: 'only-people', label: 'Only my people' },
+        ]}
+      />
+      {people.length === 0 ? (
+        <p className="hint">
+          No people yet. Turn on “Show faces” above, then click a face in the preview and add the person. They will stay clear in every photo and video you open.
+        </p>
+      ) : (
+        <ul className="people">
+          {people.map((person) => (
+            <li key={person.id} className="person">
+              <img src={person.samples[0]?.thumb} alt="" className="face-thumb" />
+              <div className="person-body">
+                <input
+                  className="person-name"
+                  value={person.name}
+                  onChange={(e) => renamePerson(person.id, e.target.value)}
+                  aria-label="Name"
+                />
+                <span className="dim small">{person.samples.length} sample{person.samples.length === 1 ? '' : 's'}</span>
+              </div>
+              <button className="btn btn-small btn-ghost" onClick={() => removePerson(person.id)} title="Remove">
+                ✕
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {people.length > 0 && (
+        <>
+          <Slider
+            label="Recognition strictness"
+            value={Math.round(p.matchThreshold * 100)}
+            min={30}
+            max={70}
+            format={(v) => `${v}`}
+            onChange={(v) => set({ matchThreshold: v / 100 })}
+          />
+          <p className="hint">Higher = fewer strangers mistaken for your people (they get masked); lower = your people recognised more often. If someone in your list still gets masked, add another sample of them from that photo.</p>
+          <div className={`status status-${recognizer.status}`}>
+            {recognizer.status === 'loading' && 'Loading face recognition (SFace) on this device…'}
+            {recognizer.status === 'ready' && `Face recognition ready · ${recognizer.backend}`}
+            {recognizer.status === 'error' && `Face recognition failed: ${recognizer.error}`}
+            {recognizer.status === 'idle' && 'Face recognition idle'}
+          </div>
+        </>
+      )}
+      {overrideCount > 0 && (
+        <div className="panel-header">
+          <span className="dim small">{overrideCount} manual choice{overrideCount === 1 ? '' : 's'} in this photo</span>
+          <button className="btn btn-small btn-ghost" onClick={clearFaceOverrides}>
+            Clear
+          </button>
+        </div>
+      )}
+
+      <fieldset disabled={!enabled}>
+        <Segmented
+          label="Mask style"
+          value={p.style}
+          onChange={(style) => set({ style })}
+          options={[
+            { value: 'blur', label: 'Blur' },
+            { value: 'pixelate', label: 'Pixelate' },
+            { value: 'solid', label: 'Solid' },
+            { value: 'emoji', label: 'Emoji' },
+          ]}
+        />
+        {p.style === 'solid' && (
+          <label className="field field-inline">
+            <span className="field-label">Colour</span>
+            <input type="color" value={p.color} onChange={(e) => set({ color: e.target.value })} />
+          </label>
+        )}
+        {p.style === 'emoji' && (
+          <label className="field field-inline">
+            <span className="field-label">Emoji</span>
+            <input
+              type="text"
+              className="emoji-input"
+              value={p.emoji}
+              maxLength={4}
+              onChange={(e) => set({ emoji: e.target.value || '🙂' })}
+            />
+          </label>
+        )}
+        {p.style !== 'emoji' && (
+          <Segmented
+            label="Mask shape"
+            value={p.shape}
+            onChange={(shape) => set({ shape })}
+            options={[
+              { value: 'ellipse', label: 'Oval' },
+              { value: 'rect', label: 'Rounded box' },
+            ]}
+          />
+        )}
+
+        <Slider
+          label="Mask area size"
+          value={Math.round(p.sizeScale * 100)}
+          min={60}
+          max={300}
+          step={5}
+          format={(v) => `${v}%`}
+          onChange={(v) => set({ sizeScale: v / 100 })}
+        />
+        <Slider
+          label={p.style === 'blur' ? 'Blur strength' : p.style === 'pixelate' ? 'Pixel size' : p.style === 'solid' ? 'Opacity' : 'Opacity'}
+          value={p.intensity}
+          min={0}
+          max={100}
+          format={(v) => `${v}`}
+          onChange={(intensity) => set({ intensity })}
+        />
+        {p.style !== 'emoji' && (
+          <Slider label="Edge softness" value={p.feather} min={0} max={100} onChange={(feather) => set({ feather })} />
+        )}
+
+      </fieldset>
+
+      <fieldset disabled={!enabled && !p.showBoxes}>
+        <h3 className="section-title">Detection</h3>
+        <Segmented
+          label="Engine"
+          value={p.detection.engine}
+          onChange={(engine) => set({ detection: { ...p.detection, engine } })}
+          options={[
+            { value: 'yunet', label: 'Precise', title: 'YuNet — finds small and distant faces, crowds, wide shots' },
+            { value: 'blazeface', label: 'Fast', title: 'MediaPipe BlazeFace — quickest, best for close-up faces' },
+          ]}
+        />
+        {p.detection.engine === 'yunet' ? (
+          <Slider
+            label="Analysis resolution"
+            value={p.detection.analysisSize}
+            min={320}
+            max={1920}
+            step={160}
+            format={(v) => `${v}px`}
+            onChange={(analysisSize) => set({ detection: { ...p.detection, analysisSize } })}
+          />
+        ) : (
+          <Segmented
+            label="Search mode"
+            value={p.detection.mode}
+            onChange={(mode) => set({ detection: { ...p.detection, mode } })}
+            options={[
+              { value: 'fast', label: 'Single pass', title: 'One pass over the frame' },
+              { value: 'thorough', label: 'Tiled', title: 'Scans overlapping tiles to catch smaller faces (much slower)' },
+            ]}
+          />
+        )}
+        {p.detection.engine === 'yunet' && isVideo && p.detection.analysisSize > 640 && (
+          <p className="hint">While playing, the preview analyses at 640px to stay smooth. Pause or export to see the full setting.</p>
+        )}
+        <Slider
+          label="Sensitivity"
+          value={Math.round((1 - p.detection.minConfidence) * 100)}
+          min={10}
+          max={90}
+          format={(v) => `${v}`}
+          onChange={(v) => set({ detection: { ...p.detection, minConfidence: 1 - v / 100 } })}
+        />
+
+        {isVideo && (
+          <>
+            <h3 className="section-title">Tracking (video)</h3>
+            <Toggle
+              label="Smooth & hold masks between frames"
+              hint="Reduces flicker and keeps a mask in place when the detector misses a frame"
+              checked={p.tracking.enabled}
+              onChange={(enabled) => set({ tracking: { ...p.tracking, enabled } })}
+            />
+            <Slider
+              label="Motion smoothing"
+              value={Math.round(p.tracking.smoothing * 100)}
+              min={0}
+              max={90}
+              disabled={!p.tracking.enabled}
+              format={(v) => `${v}`}
+              onChange={(v) => set({ tracking: { ...p.tracking, smoothing: v / 100 } })}
+            />
+            <Slider
+              label="Hold after loss"
+              value={p.tracking.holdFrames}
+              min={0}
+              max={30}
+              disabled={!p.tracking.enabled}
+              format={(v) => `${v} frames`}
+              onChange={(holdFrames) => set({ tracking: { ...p.tracking, holdFrames } })}
+            />
+          </>
+        )}
+
+      </fieldset>
+
+    </div>
+  );
+}
