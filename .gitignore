@@ -26,3 +26,7 @@ pnpm-debug.log*
 .env
 .env.*
 !.env.example
+
+# desktop build outputs
+desktop/dist/
+release/

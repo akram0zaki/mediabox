@@ -32,6 +32,11 @@ Everything else in the app (trimming, crop, filters, colour) is there so you don
 - People are recognised on-device (InsightFace MobileFaceNet embeddings aligned with the detector's landmarks) and stay clear in every file you open. Add a few samples per person for robustness.
 - Modes: everyone except my people (default), everyone, only my people. Recognition strictness slider. The list lives in your browser's local storage — nowhere else.
 
+**Face swap**
+- **Swap** mask style replaces masked faces with a substitute face instead of blurring them, so footage keeps looking natural. Pick a substitute by clicking any detected face (“Use this face as the substitute face”) or by loading a portrait photo; the library persists locally.
+- **Mesh engine (web)**: MediaPipe Face Landmarker meshes each face, a WebGL warp maps the substitute's texture onto it, colour-matched and blended along the face oval. Fast (a few ms per face) and fully in-browser. Faces too small or too turned to mesh are blurred instead — nobody is left exposed because a swap failed.
+- **Neural engine (desktop app only)**: identity-preserving swap with InsightFace's *inswapper* driven by ArcFace embeddings, running natively through onnxruntime-node (CoreML on macOS, DirectML on Windows, CPU elsewhere). See [Desktop app](#desktop-app).
+
 **Editing**
 - Rotate, flip, crop.
 - Filters & colour (WebGL): 14 preset looks with live thumbnails and a strength slider, layered on top of manual exposure, brightness, contrast, highlights, shadows, fade, temperature, tint, saturation, vibrance, hue, vignette, grain, sharpen and soften.
@@ -85,6 +90,21 @@ Cross-Origin-Embedder-Policy: require-corp
 - **Chrome / Edge 113+** (and other Chromium browsers): full experience — WebGPU inference, WebCodecs decode/encode, faster-than-realtime export.
 - **Safari 17+ / Firefox**: inference falls back to WASM; video preview and export fall back to the `<video>` element + MediaRecorder path (real time, WebM output).
 
+## Desktop app
+
+The same web app wrapped in Electron, plus a native inference process for the neural face swap.
+
+```bash
+pnpm desktop:start   # build web + main process, launch the app
+pnpm desktop:dist    # package installers into release/ (dmg/zip, nsis/zip, AppImage)
+pnpm desktop:smoke   # headless end-to-end check (hidden window)
+```
+
+- The app is served from a privileged `app://` scheme so WASM, WebGPU and module loading behave exactly as on the web.
+- The neural engine's models are **not bundled**. The first time you choose *Swap → Neural*, the app explains their licence and downloads them (about 730 MB) into the user data folder: `arcface_w600k_r50.onnx` and `inswapper_128.onnx`, fetched from the FaceFusion assets releases. Set `MEDIABOX_MODEL_DIR` to point at an existing copy.
+- Faces are aligned in the renderer and sent to the main process over IPC as float tensors; results are pasted back with a feathered mask. About 100 ms per face on Apple silicon.
+- `desktop/src/neural/onnxInitializer.ts` reads inswapper's embedding-mapping matrix straight out of the ONNX file, so no Python tooling is needed.
+
 ## How it works
 
 ```
@@ -106,6 +126,11 @@ src/
     ort.ts             shared onnxruntime-web config and the single inference queue
     tracker.ts         IoU tracker: smoothing, hold-on-loss, stable track ids
     masks.ts           mask renderers and the detection overlay
+    landmarker.ts      MediaPipe Face Landmarker on per-face crops (478-point mesh)
+    swap/sources.ts    substitute-face library (crop + mesh, persisted)
+    swap/warp.ts       WebGL mesh warp
+    swap/neural.ts     renderer side of the desktop neural swap (alignment, IPC, paste-back)
+  desktop/src/         Electron main, preload bridge, model downloader, onnxruntime-node engine
   media/
     loadAsset.ts       file → ImageAsset | VideoAsset (probed with mediabunny)
     player.ts          preview frame sources: WebCodecs (mediabunny) or <video>
@@ -139,13 +164,15 @@ Both detectors expect roughly upright faces. Transform runs before detection, so
 
 MediaBox is released under the [MIT Licence](LICENSE).
 
-The models it downloads have their own terms:
+The models it downloads have their own terms. Face swapping in particular: only swap faces you have permission to use, and never present the output as a real recording of someone.
 
 | Model | Licence |
 | --- | --- |
 | MediaPipe BlazeFace | Apache-2.0 |
 | OpenCV Zoo YuNet | Apache-2.0 |
+| MediaPipe Face Landmarker | Apache-2.0 |
 | InsightFace `buffalo_sc` (MobileFaceNet w600k) | **Non-commercial research use only** (see the [InsightFace model zoo](https://github.com/deepinsight/insightface/tree/master/model_zoo)) |
+| InsightFace `inswapper_128` + ArcFace r50 (desktop neural swap, downloaded on demand) | **Non-commercial research use only** |
 
 If you need commercial use of face recognition, swap the recogniser for a permissively licensed model (OpenCV Zoo's SFace, Apache-2.0, works with the same alignment code but is about three times slower) — see `src/faces/recognizer.ts`.
 

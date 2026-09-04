@@ -5,6 +5,7 @@ import { faceLandmarker } from '../../faces/landmarker';
 import { buildSwapSource } from '../../faces/swap/sources';
 import { hasMeshWarp } from '../../faces/swap/warp';
 import { createCanvas, getCtx } from '../../core/canvas';
+import { cancelNeuralDownload, downloadNeuralModels, isNeuralAvailable, loadNeural, refreshNeuralStatus, subscribeNeural, type NeuralUiState } from '../../faces/swap/neural';
 import { useEditor } from '../../state/store';
 import { Segmented } from '../controls/Segmented';
 import { Slider } from '../controls/Slider';
@@ -26,6 +27,18 @@ function useLandmarkerState(active: boolean): DetectorState {
   useEffect(() => {
     if (active) faceLandmarker.load().catch(() => undefined);
     return faceLandmarker.status.subscribe(setState);
+  }, [active]);
+  return state;
+}
+
+function useNeuralState(active: boolean): NeuralUiState {
+  const [state, setState] = useState<NeuralUiState>(() => ({ available: isNeuralAvailable(), status: null, phase: 'idle', progress: null, error: null }));
+  useEffect(() => {
+    if (!isNeuralAvailable()) return;
+    void refreshNeuralStatus().then((st) => {
+      if (active && st?.modelsPresent) void loadNeural();
+    });
+    return subscribeNeural(setState);
   }, [active]);
   return state;
 }
@@ -60,6 +73,8 @@ export function FaceMaskPanel() {
   const renameSwapSource = useEditor((s) => s.renameSwapSource);
   const landmarker = useLandmarkerState(p.style === 'swap');
   const [swapBusy, setSwapBusy] = useState(false);
+  const neural = useNeuralState(p.style === 'swap' && p.swapEngine === 'neural');
+  const [licenceOk, setLicenceOk] = useState(false);
   const [swapError, setSwapError] = useState<string | null>(null);
 
   /** Loads a portrait photo, finds its largest face and turns it into a substitute face. */
@@ -238,6 +253,58 @@ export function FaceMaskPanel() {
               {landmarker.status === 'error' && `Face mesh failed: ${landmarker.error}`}
               {landmarker.status === 'idle' && 'Face mesh idle'}
             </div>
+            {neural.available && (
+              <>
+                <Segmented
+                  label="Swap engine"
+                  value={p.swapEngine}
+                  onChange={(swapEngine) => set({ swapEngine })}
+                  options={[
+                    { value: 'mesh', label: 'Mesh (fast)', title: 'Warps the substitute face onto the target' },
+                    { value: 'neural', label: 'Neural', title: 'Identity-preserving swap (InsightFace inswapper) — runs natively in the desktop app' },
+                  ]}
+                />
+                {p.swapEngine === 'neural' && (
+                  <div className="neural-box">
+                    {neural.phase === 'ready' && <div className="status status-ready">Neural swap ready · {neural.status?.backend}</div>}
+                    {neural.phase === 'loading' && <div className="status status-loading">Loading neural models…</div>}
+                    {neural.phase === 'error' && <div className="status status-error">{neural.error}</div>}
+                    {neural.phase === 'downloading' && (
+                      <div className="export-progress">
+                        <div className="progress">
+                          <div className="progress-bar" style={{ width: `${Math.round((neural.progress?.overall ?? 0) * 100)}%` }} />
+                        </div>
+                        <div className="progress-row">
+                          <span>
+                            {neural.progress ? `${neural.progress.file} · ${(neural.progress.received / 1048576).toFixed(0)} / ${(neural.progress.total / 1048576).toFixed(0)} MB` : 'Starting…'}
+                          </span>
+                          <button className="btn btn-small btn-ghost" onClick={cancelNeuralDownload}>
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                    {(neural.phase === 'idle' || neural.phase === 'error') && neural.status && !neural.status.modelsPresent && (
+                      <>
+                        <p className="hint">
+                          The neural engine needs two models (about 730 MB) downloaded to this computer: InsightFace <em>inswapper</em> and ArcFace. They are
+                          licensed by InsightFace for <strong>non-commercial research use only</strong>.
+                        </p>
+                        <Toggle label="I understand and accept the model licence" checked={licenceOk} onChange={setLicenceOk} />
+                        <button className="btn btn-primary btn-small btn-block" disabled={!licenceOk} onClick={() => void downloadNeuralModels()}>
+                          Download models
+                        </button>
+                      </>
+                    )}
+                    {neural.phase === 'idle' && neural.status?.modelsPresent && (
+                      <button className="btn btn-small btn-block" onClick={() => void loadNeural()}>
+                        Load neural models
+                      </button>
+                    )}
+                  </div>
+                )}
+              </>
+            )}
             <p className="hint">
               Faces too small or too turned to be meshed are blurred instead, so nobody is left exposed. Only use faces you have permission to use.
             </p>

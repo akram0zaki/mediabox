@@ -503,3 +503,4 @@ input[type='color'] { width: 40px; height: 26px; border: 1px solid var(--line-st
 .swap-source.is-active .swap-source-pick { border-color: var(--accent); }
 .swap-source-name { flex: 1; min-width: 0; background: var(--bg-panel); border: 1px solid var(--line-strong); border-radius: 6px; padding: 4px 6px; }
 .btn.is-disabled { opacity: 0.5; pointer-events: none; }
+.neural-box { display: flex; flex-direction: column; gap: 8px; padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg-panel); }

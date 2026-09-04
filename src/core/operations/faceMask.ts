@@ -10,6 +10,7 @@ import { faceLandmarker, type Mesh } from '../../faces/landmarker';
 import { getSwapSource, sourceMesh, swapSourceBitmap } from '../../faces/swap/sources';
 import { hasMeshWarp } from '../../faces/swap/warp';
 import { drawFaceSwap, type SwapRender } from '../../faces/masks';
+import { isNeuralReady, neuralSwapFace, sourceEmbedding } from '../../faces/swap/neural';
 
 export type MaskMode = 'all' | 'except-people' | 'only-people';
 export type FaceOverride = 'keep' | 'mask';
@@ -35,6 +36,8 @@ export interface FaceMaskParams {
   overrides: Record<string, FaceOverride>;
   /** Substitute face used by the 'swap' style. */
   swapSourceId: string | null;
+  /** 'mesh' works everywhere; 'neural' needs the desktop app with its models downloaded. */
+  swapEngine: 'mesh' | 'neural';
 }
 
 export const FACE_MASK_TYPE = 'faceMask';
@@ -57,7 +60,10 @@ export const defaultFaceMask: FaceMaskParams = {
   matchThreshold: 0.45,
   overrides: {},
   swapSourceId: null,
+  swapEngine: 'mesh',
 };
+/** During playback, neural-swap at most this many (largest) faces per frame. */
+const REALTIME_NEURAL_LIMIT = 2;
 
 /** Faces narrower than this (px in the analysed frame) are blurred instead of swapped. */
 const MIN_SWAP_FACE = 44;
@@ -262,6 +268,29 @@ async function drawSwaps(input: Canvas2D, boxes: FaceBox[], p: FaceMaskParams, c
   }
   let candidates = boxes.filter((b) => b.w >= MIN_SWAP_FACE);
   if (ctx.realtime) candidates = [...candidates].sort((a, b) => b.w - a.w).slice(0, REALTIME_SWAP_LIMIT);
+
+  // Neural engine (desktop): identity-preserving swap on faces with 5-point landmarks; the rest fall
+  // through to the mesh warp below.
+  if (p.swapEngine === 'neural' && isNeuralReady()) {
+    let embedding: Float32Array | null = null;
+    try {
+      embedding = await sourceEmbedding(source);
+    } catch (err) {
+      console.warn('[faceMask] neural embedding failed', err);
+    }
+    if (embedding) {
+      const neuralTargets = candidates.filter((b) => b.landmarks);
+      const limited = ctx.realtime ? [...neuralTargets].sort((a, b) => b.w - a.w).slice(0, REALTIME_NEURAL_LIMIT) : neuralTargets;
+      for (const box of limited) {
+        try {
+          if (await neuralSwapFace(input, box, embedding, p.feather)) done.add(box);
+        } catch (err) {
+          console.warn('[faceMask] neural swap failed for a face', err);
+        }
+      }
+      candidates = candidates.filter((b) => !done.has(b));
+    }
+  }
 
   // Mesh every candidate before drawing anything (swaps change the pixels the landmarker reads).
   const meshed: { box: FaceBox; mesh: Mesh }[] = [];
