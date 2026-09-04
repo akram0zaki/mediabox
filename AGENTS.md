@@ -61,6 +61,8 @@ Everything visual goes through `renderPipeline()` in `src/core/pipeline.ts`: a s
 - The inswapper model's embedding-mapping matrix is its last 512×512 initializer, read with the tiny protobuf reader in `desktop/src/neural/onnxInitializer.ts`.
 - Electron serves the app from the privileged `app://` scheme; `file://` breaks WASM fetches and module imports.
 - The packaged desktop app must ship only `onnxruntime-node` as a runtime dependency; all web dependencies are devDependencies because Vite bundles them.
+- Static hosts cap files at 25 MiB: `pnpm build` splits the ORT WebGPU `.wasm` into parts and `src/faces/ort.ts` reassembles them into a Blob. Keep any new large asset under the limit or extend the split script.
+- Deployment (`pnpm deploy:cloudflare`) reads credentials from `.env` only (see `.env.example`); never rely on a wrangler login.
 
 ## Licences and what may be shipped
 

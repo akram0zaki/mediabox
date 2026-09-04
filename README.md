@@ -78,12 +78,17 @@ Try it with the bundled samples — the “Try the sample photo / video” butto
 
 ### Deploying
 
-The build in `dist/` is static — any static host works. Two optional headers enable multi-threaded WASM for a faster CPU fallback on machines without WebGPU:
+The build in `dist/` is static — any static host works. `public/_headers` (honoured by Cloudflare Pages) and the Vite dev/preview servers send `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp`, which enable multi-threaded WASM for a faster CPU fallback on machines without WebGPU; replicate them on other hosts if you can.
 
+Static hosts such as Cloudflare Pages cap single files at 25 MiB. The ONNX Runtime WebGPU build is larger, so `pnpm build` splits it into parts (`scripts/split-large-assets.mjs`) that the app fetches and reassembles into a Blob at start-up — no external hosting involved.
+
+**Cloudflare Pages, scripted.** Copy `.env.example` to `.env`, fill in an API token (Account → Cloudflare Pages: Edit; Zone → DNS: Edit and Zone: Read for your zone) and your Account ID, then:
+
+```bash
+pnpm deploy:cloudflare
 ```
-Cross-Origin-Opener-Policy: same-origin
-Cross-Origin-Embedder-Policy: require-corp
-```
+
+The script verifies the token, builds, creates the Pages project if needed, uploads `dist/` with wrangler, attaches the custom domain and creates/updates the proxied CNAME record. It uses only the values in `.env`, never a wrangler login session.
 
 ### Browser support
 

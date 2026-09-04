@@ -10,7 +10,7 @@ const pub = join(root, 'public');
 
 const copies = [
   { from: 'node_modules/@mediapipe/tasks-vision/wasm', to: 'mediapipe/wasm', match: /^vision_wasm_(internal|nosimd_internal)\.(js|wasm)$/ },
-  { from: 'node_modules/onnxruntime-web/dist', to: 'ort', match: /^ort-wasm-simd-threaded(\.jsep)?\.(mjs|wasm)$/ },
+  { from: 'node_modules/onnxruntime-web/dist', to: 'ort', match: /^ort-wasm-simd-threaded\.jsep\.(mjs|wasm)$/ },
 ];
 
 const models = [
