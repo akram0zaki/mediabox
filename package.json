@@ -82,19 +82,31 @@
       "target": [
         "dmg",
         "zip"
+      ],
+      "files": [
+        "!node_modules/onnxruntime-node/bin/napi-v6/win32/**",
+        "!node_modules/onnxruntime-node/bin/napi-v6/linux/**"
       ]
     },
     "win": {
       "target": [
         "nsis",
         "zip"
+      ],
+      "files": [
+        "!node_modules/onnxruntime-node/bin/napi-v6/darwin/**",
+        "!node_modules/onnxruntime-node/bin/napi-v6/linux/**"
       ]
     },
     "linux": {
       "target": [
         "AppImage"
       ],
-      "category": "Graphics"
+      "category": "Graphics",
+      "files": [
+        "!node_modules/onnxruntime-node/bin/napi-v6/darwin/**",
+        "!node_modules/onnxruntime-node/bin/napi-v6/win32/**"
+      ]
     },
     "npmRebuild": false
   }
