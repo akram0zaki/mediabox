@@ -3,6 +3,9 @@ import type { Canvas2D } from '../core/canvas';
 import type { FrameFace } from '../core/operations/faceMask';
 import type { PersonSample } from '../faces/people';
 import { faceRecognizer } from '../faces/recognizer';
+import { buildSwapSource } from '../faces/swap/sources';
+import { createCanvas, getCtx } from '../core/canvas';
+import { hasMeshWarp } from '../faces/swap/warp';
 import { useEditor } from '../state/store';
 
 export interface PickedFace {
@@ -28,6 +31,8 @@ export function FacePicker({ picked, onClose }: Props) {
   const addPerson = useEditor((s) => s.addPerson);
   const addPersonSample = useEditor((s) => s.addPersonSample);
   const removePerson = useEditor((s) => s.removePerson);
+  const addSwapSource = useEditor((s) => s.addSwapSource);
+  const swapCount = useEditor((s) => s.swapSources.length);
   const [name, setName] = useState(`Person ${people.length + 1}`);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -64,6 +69,29 @@ export function FacePicker({ picked, onClose }: Props) {
       const sample = await makeSample();
       if (matched) addPersonSample(matched.id, sample);
       else addPerson(name.trim() || `Person ${people.length + 1}`, sample);
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const enrolAsSubstitute = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      // Stills: build from the full-resolution bitmap rather than the (downscaled) preview frame.
+      let frame = clean;
+      let box = face.box;
+      if (asset?.kind === 'image' && asset.width > clean.width) {
+        const k = asset.width / clean.width;
+        frame = createCanvas(asset.width, asset.height);
+        getCtx(frame).drawImage(asset.bitmap, 0, 0);
+        box = { ...face.box, x: face.box.x * k, y: face.box.y * k, w: face.box.w * k, h: face.box.h * k };
+      }
+      const source = await buildSwapSource(frame, box, matched?.name ?? `Face ${swapCount + 1}`);
+      addSwapSource(source, true);
       onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -127,6 +155,11 @@ export function FacePicker({ picked, onClose }: Props) {
           </>
         )}
         <p className="hint">Add a few samples per person (different photos, angles, lighting) for reliable recognition.</p>
+        {hasMeshWarp() && (
+          <button className="btn btn-small btn-block" disabled={busy} onClick={() => void enrolAsSubstitute()} title="Masked faces will be replaced with this face (Swap mask style)">
+            {busy ? 'Working…' : 'Use this face as the substitute face'}
+          </button>
+        )}
         {error && <div className="status status-error">{error}</div>}
       </div>
     </div>

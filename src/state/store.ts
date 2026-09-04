@@ -13,6 +13,7 @@ import {
 } from '../core/operations';
 import { releaseAsset } from '../media/loadAsset';
 import { newPersonId, setPeople, type Person, type PersonSample } from '../faces/people';
+import { setSwapSources, type SwapSource } from '../faces/swap/sources';
 import type { FaceOverride } from '../core/operations/faceMask';
 
 const PEOPLE_KEY = 'mediabox.people.v2';
@@ -24,6 +25,27 @@ function loadPeople(): Person[] {
     return Array.isArray(parsed) ? parsed : [];
   } catch {
     return [];
+  }
+}
+
+const SWAP_KEY = 'mediabox.swapSources.v1';
+
+function loadSwapSources(): SwapSource[] {
+  try {
+    const raw = localStorage.getItem(SWAP_KEY);
+    const parsed = raw ? (JSON.parse(raw) as SwapSource[]) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function persistSwapSources(sources: SwapSource[]) {
+  setSwapSources(sources);
+  try {
+    localStorage.setItem(SWAP_KEY, JSON.stringify(sources));
+  } catch (err) {
+    console.warn('[store] could not persist substitute faces', err);
   }
 }
 
@@ -73,6 +95,8 @@ interface EditorState {
   faceOverrides: Record<string, FaceOverride>;
   /** Small copy of the current source frame (after transform) used for filter preset thumbnails. */
   previewThumb: HTMLCanvasElement | null;
+  /** Substitute faces for the swap mask style. Persisted. */
+  swapSources: SwapSource[];
 
   setAsset(asset: MediaAsset | null): void;
   setLoading(loading: boolean, error?: string | null): void;
@@ -97,6 +121,9 @@ interface EditorState {
   setFaceOverride(key: string, decision: FaceOverride | null): void;
   clearFaceOverrides(): void;
   setPreviewThumb(thumb: HTMLCanvasElement | null): void;
+  addSwapSource(source: SwapSource, select?: boolean): void;
+  renameSwapSource(id: string, name: string): void;
+  removeSwapSource(id: string): void;
 }
 
 const idleExport: ExportJob = { active: false, progress: 0, message: '', error: null, done: null };
@@ -120,6 +147,7 @@ export const useEditor = create<EditorState>((set, get) => ({
   people: loadPeople(),
   faceOverrides: {},
   previewThumb: null,
+  swapSources: loadSwapSources(),
 
   setAsset: (asset) => {
     releaseAsset(get().asset);
@@ -184,10 +212,26 @@ export const useEditor = create<EditorState>((set, get) => ({
     }),
   clearFaceOverrides: () => set({ faceOverrides: {} }),
   setPreviewThumb: (previewThumb) => set({ previewThumb }),
+  addSwapSource: (source, select = true) => {
+    const swapSources = [...get().swapSources, source].slice(-12);
+    persistSwapSources(swapSources);
+    set((s) => ({ swapSources, faceMask: select ? { ...s.faceMask, style: 'swap', swapSourceId: source.id } : s.faceMask }));
+  },
+  renameSwapSource: (id, name) => {
+    const swapSources = get().swapSources.map((s) => (s.id === id ? { ...s, name } : s));
+    persistSwapSources(swapSources);
+    set({ swapSources });
+  },
+  removeSwapSource: (id) => {
+    const swapSources = get().swapSources.filter((s) => s.id !== id);
+    persistSwapSources(swapSources);
+    set((s) => ({ swapSources, faceMask: s.faceMask.swapSourceId === id ? { ...s.faceMask, swapSourceId: swapSources[0]?.id ?? null } : s.faceMask }));
+  },
 }));
 
 // The render pipeline reads the gallery from the module registry; seed it from persisted state.
 setPeople(useEditor.getState().people);
+setSwapSources(useEditor.getState().swapSources);
 
 /**
  * Builds the ordered operation list from the current editor state.

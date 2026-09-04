@@ -1,6 +1,10 @@
 import { useEffect, useState } from 'react';
 import { faceDetection, type DetectorState, type FaceEngineId } from '../../faces/detector';
 import { faceRecognizer } from '../../faces/recognizer';
+import { faceLandmarker } from '../../faces/landmarker';
+import { buildSwapSource } from '../../faces/swap/sources';
+import { hasMeshWarp } from '../../faces/swap/warp';
+import { createCanvas, getCtx } from '../../core/canvas';
 import { useEditor } from '../../state/store';
 import { Segmented } from '../controls/Segmented';
 import { Slider } from '../controls/Slider';
@@ -16,6 +20,15 @@ function useDetectorState(engine: FaceEngineId): DetectorState {
 }
 
 const ENGINE_LABEL: Record<FaceEngineId, string> = { yunet: 'YuNet', blazeface: 'BlazeFace' };
+
+function useLandmarkerState(active: boolean): DetectorState {
+  const [state, setState] = useState<DetectorState>(faceLandmarker.status.get());
+  useEffect(() => {
+    if (active) faceLandmarker.load().catch(() => undefined);
+    return faceLandmarker.status.subscribe(setState);
+  }, [active]);
+  return state;
+}
 
 function useRecognizerState(active: boolean): DetectorState {
   const [state, setState] = useState<DetectorState>(faceRecognizer.status.get());
@@ -41,6 +54,35 @@ export function FaceMaskPanel() {
   const renamePerson = useEditor((s) => s.renamePerson);
   const removePerson = useEditor((s) => s.removePerson);
   const recognizer = useRecognizerState(people.length > 0 || p.showBoxes);
+  const swapSources = useEditor((s) => s.swapSources);
+  const addSwapSource = useEditor((s) => s.addSwapSource);
+  const removeSwapSource = useEditor((s) => s.removeSwapSource);
+  const renameSwapSource = useEditor((s) => s.renameSwapSource);
+  const landmarker = useLandmarkerState(p.style === 'swap');
+  const [swapBusy, setSwapBusy] = useState(false);
+  const [swapError, setSwapError] = useState<string | null>(null);
+
+  /** Loads a portrait photo, finds its largest face and turns it into a substitute face. */
+  const loadFacePhoto = async (file: File) => {
+    setSwapBusy(true);
+    setSwapError(null);
+    try {
+      const bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
+      const scale = Math.min(1, 1600 / Math.max(bitmap.width, bitmap.height));
+      const canvas = createCanvas(bitmap.width * scale, bitmap.height * scale);
+      getCtx(canvas).drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+      bitmap.close();
+      const faces = await faceDetection.detect(canvas, { engine: 'yunet', minConfidence: 0.5, analysisSize: 960, mode: 'fast' });
+      if (faces.length === 0) throw new Error('No face found in that photo.');
+      const largest = [...faces].sort((a, b) => b.w * b.h - a.w * a.h)[0];
+      const source = await buildSwapSource(canvas, largest, file.name.replace(/\.[^.]+$/, '').slice(0, 24) || `Face ${swapSources.length + 1}`);
+      addSwapSource(source, true);
+    } catch (err) {
+      setSwapError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSwapBusy(false);
+    }
+  };
   const isVideo = asset?.kind === 'video';
   const overrideCount = Object.keys(overrides).length;
 
@@ -150,8 +192,57 @@ export function FaceMaskPanel() {
             { value: 'pixelate', label: 'Pixelate' },
             { value: 'solid', label: 'Solid' },
             { value: 'emoji', label: 'Emoji' },
+            ...(hasMeshWarp() ? [{ value: 'swap' as const, label: 'Swap', title: 'Replace masked faces with a substitute face' }] : []),
           ]}
         />
+        {p.style === 'swap' && (
+          <div className="swap-section">
+            <span className="field-label">Substitute face</span>
+            {swapSources.length === 0 ? (
+              <p className="hint">
+                No substitute faces yet. Turn on “Show faces”, click a face and choose “Use this face as the substitute face”, or load a portrait photo below.
+              </p>
+            ) : (
+              <div className="swap-sources" role="radiogroup" aria-label="Substitute face">
+                {swapSources.map((src) => (
+                  <div key={src.id} className={`swap-source${p.swapSourceId === src.id ? ' is-active' : ''}`}>
+                    <button type="button" role="radio" aria-checked={p.swapSourceId === src.id} className="swap-source-pick" onClick={() => set({ swapSourceId: src.id })}>
+                      <img src={src.thumb} alt="" className="face-thumb" />
+                    </button>
+                    <input className="swap-source-name" value={src.name} onChange={(e) => renameSwapSource(src.id, e.target.value)} aria-label="Name" />
+                    <button type="button" className="btn btn-small btn-ghost" onClick={() => removeSwapSource(src.id)} title="Remove">
+                      ✕
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <label className={`btn btn-small${swapBusy ? ' is-disabled' : ''}`} style={{ textAlign: 'center' }}>
+              {swapBusy ? 'Working…' : 'Load a face photo…'}
+              <input
+                type="file"
+                accept="image/*"
+                hidden
+                disabled={swapBusy}
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) void loadFacePhoto(f);
+                  e.target.value = '';
+                }}
+              />
+            </label>
+            {swapError && <div className="status status-error">{swapError}</div>}
+            <div className={`status status-${landmarker.status}`}>
+              {landmarker.status === 'loading' && 'Loading face mesh model on this device…'}
+              {landmarker.status === 'ready' && `Face mesh ready · ${landmarker.backend}`}
+              {landmarker.status === 'error' && `Face mesh failed: ${landmarker.error}`}
+              {landmarker.status === 'idle' && 'Face mesh idle'}
+            </div>
+            <p className="hint">
+              Faces too small or too turned to be meshed are blurred instead, so nobody is left exposed. Only use faces you have permission to use.
+            </p>
+          </div>
+        )}
         {p.style === 'solid' && (
           <label className="field field-inline">
             <span className="field-label">Colour</span>
@@ -170,7 +261,7 @@ export function FaceMaskPanel() {
             />
           </label>
         )}
-        {p.style !== 'emoji' && (
+        {p.style !== 'emoji' && p.style !== 'swap' && (
           <Segmented
             label="Mask shape"
             value={p.shape}
@@ -182,6 +273,7 @@ export function FaceMaskPanel() {
           />
         )}
 
+        {p.style !== 'swap' && (
         <Slider
           label="Mask area size"
           value={Math.round(p.sizeScale * 100)}
@@ -191,6 +283,8 @@ export function FaceMaskPanel() {
           format={(v) => `${v}%`}
           onChange={(v) => set({ sizeScale: v / 100 })}
         />
+        )}
+        {p.style !== 'swap' && (
         <Slider
           label={p.style === 'blur' ? 'Blur strength' : p.style === 'pixelate' ? 'Pixel size' : p.style === 'solid' ? 'Opacity' : 'Opacity'}
           value={p.intensity}
@@ -199,6 +293,7 @@ export function FaceMaskPanel() {
           format={(v) => `${v}`}
           onChange={(intensity) => set({ intensity })}
         />
+        )}
         {p.style !== 'emoji' && (
           <Slider label="Edge softness" value={p.feather} min={0} max={100} onChange={(feather) => set({ feather })} />
         )}

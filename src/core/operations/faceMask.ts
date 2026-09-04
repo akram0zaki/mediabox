@@ -6,6 +6,10 @@ import { FaceTracker } from '../../faces/tracker';
 import { drawFaceBoxes, drawFaceMasks, type MaskShape, type MaskStyle, type OverlayFace } from '../../faces/masks';
 import { faceRecognizer } from '../../faces/recognizer';
 import { getPeople, matchPerson } from '../../faces/people';
+import { faceLandmarker, type Mesh } from '../../faces/landmarker';
+import { getSwapSource, sourceMesh, swapSourceBitmap } from '../../faces/swap/sources';
+import { hasMeshWarp } from '../../faces/swap/warp';
+import { drawFaceSwap, type SwapRender } from '../../faces/masks';
 
 export type MaskMode = 'all' | 'except-people' | 'only-people';
 export type FaceOverride = 'keep' | 'mask';
@@ -29,6 +33,8 @@ export interface FaceMaskParams {
   matchThreshold: number;
   /** Per-photo manual decisions, keyed by normalised face position (see faceKey). */
   overrides: Record<string, FaceOverride>;
+  /** Substitute face used by the 'swap' style. */
+  swapSourceId: string | null;
 }
 
 export const FACE_MASK_TYPE = 'faceMask';
@@ -50,7 +56,17 @@ export const defaultFaceMask: FaceMaskParams = {
   maskMode: 'except-people',
   matchThreshold: 0.45,
   overrides: {},
+  swapSourceId: null,
 };
+
+/** Faces narrower than this (px in the analysed frame) are blurred instead of swapped. */
+const MIN_SWAP_FACE = 44;
+/** During playback, swap at most this many (largest) faces per frame; the rest are blurred. */
+const REALTIME_SWAP_LIMIT = 8;
+/** Per-track mesh smoothing for video (0 = none). */
+const MESH_SMOOTHING = 0.5;
+let meshSequence = '';
+const meshes = new Map<number, Mesh>();
 
 /** One face in a rendered frame, with the decision that was taken for it. */
 export interface FrameFace {
@@ -201,7 +217,12 @@ export const faceMaskOperation: OperationHandler<FaceMaskParams> = registerOpera
       getCtx(clean).drawImage(input, 0, 0);
     }
 
-    if (p.applyMask) drawFaceMasks(input, decided.filter((f) => !f.kept).map((f) => f.box), p);
+    if (p.applyMask) {
+      const toMask = decided.filter((f) => !f.kept).map((f) => f.box);
+      const swapped = p.style === 'swap' ? await drawSwaps(input, toMask, p, ctx, sequential) : new Set<FaceBox>();
+      const rest = toMask.filter((b) => !swapped.has(b));
+      if (rest.length) drawFaceMasks(input, rest, p.style === 'swap' ? { ...p, style: 'blur' } : p);
+    }
     if (p.showBoxes && ctx.mode === 'preview') {
       const overlay: OverlayFace[] = decided.map((f) => ({
         box: f.box,
@@ -216,6 +237,58 @@ export const faceMaskOperation: OperationHandler<FaceMaskParams> = registerOpera
     return input;
   },
 });
+
+/**
+ * Mesh-swaps as many of the faces as possible and returns the set that was swapped. Faces that
+ * are too small, that the landmarker cannot mesh, or beyond the realtime budget are left for the
+ * blur fallback — a face is never left exposed because the swap failed.
+ */
+async function drawSwaps(input: Canvas2D, boxes: FaceBox[], p: FaceMaskParams, ctx: FrameContext, sequential: boolean): Promise<Set<FaceBox>> {
+  const done = new Set<FaceBox>();
+  const source = getSwapSource(p.swapSourceId);
+  if (!source || !hasMeshWarp()) return done;
+  let bitmap: ImageBitmap;
+  try {
+    bitmap = await swapSourceBitmap(source);
+  } catch (err) {
+    console.warn('[faceMask] substitute face unavailable', err);
+    return done;
+  }
+  const swap: SwapRender = { sourceId: source.id, bitmap, sourceMesh: sourceMesh(source) };
+
+  if (sequential && meshSequence !== ctx.sequenceId) {
+    meshSequence = ctx.sequenceId!;
+    meshes.clear();
+  }
+  let candidates = boxes.filter((b) => b.w >= MIN_SWAP_FACE);
+  if (ctx.realtime) candidates = [...candidates].sort((a, b) => b.w - a.w).slice(0, REALTIME_SWAP_LIMIT);
+
+  // Mesh every candidate before drawing anything (swaps change the pixels the landmarker reads).
+  const meshed: { box: FaceBox; mesh: Mesh }[] = [];
+  for (const box of candidates) {
+    let mesh: Mesh | null = null;
+    const prev = sequential && box.trackId !== undefined ? meshes.get(box.trackId) : undefined;
+    if (box.fresh === false && prev) {
+      mesh = prev; // held track: reuse the last mesh
+    } else {
+      try {
+        mesh = await faceLandmarker.meshFor(input, box);
+      } catch (err) {
+        console.warn('[faceMask] landmarker failed', err);
+        return done;
+      }
+      if (mesh && prev && MESH_SMOOTHING > 0) {
+        for (let i = 0; i < mesh.length; i++) mesh[i] = prev[i] + (mesh[i] - prev[i]) * (1 - MESH_SMOOTHING);
+      }
+      if (mesh && sequential && box.trackId !== undefined) meshes.set(box.trackId, mesh);
+    }
+    if (mesh) meshed.push({ box, mesh });
+  }
+  for (const { box, mesh } of meshed) {
+    if (drawFaceSwap(input, mesh, swap, p.feather)) done.add(box);
+  }
+  return done;
+}
 
 /** Applies overrides, recognition and the mask mode to each face. */
 async function decideFaces(input: Canvas2D, boxes: FaceBox[], p: FaceMaskParams, ctx: FrameContext, sequential: boolean): Promise<FrameFace[]> {

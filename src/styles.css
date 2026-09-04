@@ -494,3 +494,12 @@ input[type='color'] { width: 40px; height: 26px; border: 1px solid var(--line-st
   .consent { bottom: 8px; width: calc(100vw - 16px); flex-direction: column; align-items: stretch; gap: 10px; padding: 12px; }
   .consent .btn { align-self: stretch; }
 }
+
+/* ---------- substitute faces ---------- */
+.swap-section { display: flex; flex-direction: column; gap: 8px; padding: 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); }
+.swap-sources { display: flex; flex-direction: column; gap: 6px; }
+.swap-source { display: flex; align-items: center; gap: 8px; }
+.swap-source-pick { background: none; border: 2px solid transparent; border-radius: 10px; padding: 0; cursor: pointer; }
+.swap-source.is-active .swap-source-pick { border-color: var(--accent); }
+.swap-source-name { flex: 1; min-width: 0; background: var(--bg-panel); border: 1px solid var(--line-strong); border-radius: 6px; padding: 4px 6px; }
+.btn.is-disabled { opacity: 0.5; pointer-events: none; }

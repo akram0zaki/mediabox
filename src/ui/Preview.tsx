@@ -88,6 +88,7 @@ function usePreviewRenderer(canvasRef: React.RefObject<HTMLCanvasElement | null>
   const compare = useEditor((s) => s.compare);
   const people = useEditor((s) => s.people);
   const faceOverrides = useEditor((s) => s.faceOverrides);
+  const swapSources = useEditor((s) => s.swapSources);
 
   const sourceRef = useRef<FrameSource | null>(null);
   const [sourceVersion, setSourceVersion] = useState(0);
@@ -192,7 +193,7 @@ function usePreviewRenderer(canvasRef: React.RefObject<HTMLCanvasElement | null>
   // Re-render when the asset, any parameter, or the paused playhead changes.
   useEffect(() => {
     if (!playing) void renderCurrent();
-  }, [asset, sourceVersion, transform, adjust, faceMask, faceMaskEnabled, playing, currentTime, compare, people, faceOverrides, renderCurrent]);
+  }, [asset, sourceVersion, transform, adjust, faceMask, faceMaskEnabled, playing, currentTime, compare, people, faceOverrides, swapSources, renderCurrent]);
 
   // Playback.
   useEffect(() => {

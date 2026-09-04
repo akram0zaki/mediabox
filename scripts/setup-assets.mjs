@@ -23,6 +23,10 @@ const models = [
     url: 'https://github.com/opencv/opencv_zoo/raw/main/models/face_detection_yunet/face_detection_yunet_2023mar.onnx',
   },
   {
+    file: 'models/face_landmarker.task',
+    url: 'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task',
+  },
+  {
     // InsightFace "buffalo_sc" pack; we only need the MobileFaceNet recogniser inside the zip.
     file: 'models/face_recognition_mobilefacenet_w600k.onnx',
     url: 'https://github.com/deepinsight/insightface/releases/download/v0.7/buffalo_sc.zip',

@@ -2,7 +2,7 @@
 import { createCanvas, getCtx, clamp, lerp, supportsCanvasFilter, type Canvas2D } from '../core/canvas';
 import type { FaceBox } from './common';
 
-export type MaskStyle = 'blur' | 'pixelate' | 'solid' | 'emoji';
+export type MaskStyle = 'blur' | 'pixelate' | 'solid' | 'emoji' | 'swap';
 export type MaskShape = 'ellipse' | 'rect';
 
 export interface MaskRenderParams {
@@ -56,6 +56,7 @@ export function drawFaceMasks(canvas: Canvas2D, faces: FaceBox[], p: MaskRenderP
     const faceSize = Math.max(r.w, r.h);
 
     switch (p.style) {
+      case 'swap': // handled by the face-mask operation; reaching here means fallback
       case 'blur': {
         const radius = Math.max(1, lerp(faceSize * 0.03, faceSize * 0.35, t));
         if (hasFilter) {
@@ -179,4 +180,108 @@ export function drawFaceBoxes(canvas: Canvas2D, faces: OverlayFace[], sizeScale:
     ctx.fillStyle = kept ? '#fff' : 'rgba(110, 231, 183, 1)';
     ctx.fillText(text, f.x + lw * 3, ty);
   }
+}
+
+// ---------- mesh face swap ----------
+import { faceOval, meshBounds, type Mesh } from './landmarker';
+import { warpFace } from './swap/warp';
+
+export interface SwapRender {
+  sourceId: string;
+  bitmap: ImageBitmap;
+  sourceMesh: Mesh;
+}
+
+const SAMPLE = 24;
+
+function ovalPath(ctx: ReturnType<typeof getCtx>, mesh: Mesh, ox: number, oy: number, sx = 1, sy = 1, inset = 0) {
+  const oval = faceOval();
+  // Shrink towards the centroid by `inset` pixels (approximate) for feathering.
+  let cx = 0, cy = 0;
+  for (const i of oval) {
+    cx += mesh[i * 2];
+    cy += mesh[i * 2 + 1];
+  }
+  cx /= oval.length;
+  cy /= oval.length;
+  ctx.beginPath();
+  oval.forEach((i, n) => {
+    let x = mesh[i * 2];
+    let y = mesh[i * 2 + 1];
+    if (inset > 0) {
+      const dx = x - cx;
+      const dy = y - cy;
+      const d = Math.hypot(dx, dy) || 1;
+      const k = Math.max(0, d - inset) / d;
+      x = cx + dx * k;
+      y = cy + dy * k;
+    }
+    const px = (x - ox) * sx;
+    const py = (y - oy) * sy;
+    if (n === 0) ctx.moveTo(px, py);
+    else ctx.lineTo(px, py);
+  });
+  ctx.closePath();
+}
+
+/** Mean RGB of `img` inside the face oval, sampled at low resolution. */
+function meanInOval(img: CanvasImageSource, region: { x: number; y: number; w: number; h: number }, mesh: Mesh, fromRegion: boolean): [number, number, number] {
+  const c = createCanvas(SAMPLE, SAMPLE);
+  const ctx = getCtx(c, { willReadFrequently: true });
+  ovalPath(ctx, mesh, region.x, region.y, SAMPLE / region.w, SAMPLE / region.h);
+  ctx.clip();
+  if (fromRegion) ctx.drawImage(img, region.x, region.y, region.w, region.h, 0, 0, SAMPLE, SAMPLE);
+  else ctx.drawImage(img, 0, 0, SAMPLE, SAMPLE);
+  const d = ctx.getImageData(0, 0, SAMPLE, SAMPLE).data;
+  let r = 0, g = 0, b = 0, n = 0;
+  for (let i = 0; i < d.length; i += 4) {
+    if (d[i + 3] < 128) continue;
+    r += d[i];
+    g += d[i + 1];
+    b += d[i + 2];
+    n++;
+  }
+  return n ? [r / n, g / n, b / n] : [128, 128, 128];
+}
+
+/**
+ * Replaces the face described by `targetMesh` with the source face: mesh warp, colour match,
+ * feathered oval blend. Returns false (nothing drawn) when the warp is unavailable.
+ */
+export function drawFaceSwap(canvas: Canvas2D, targetMesh: Mesh, swap: SwapRender, feather: number): boolean {
+  const b = meshBounds(targetMesh, faceOval());
+  const pad = Math.max(2, Math.max(b.w, b.h) * 0.12);
+  const x0 = Math.max(0, Math.floor(b.x - pad));
+  const y0 = Math.max(0, Math.floor(b.y - pad));
+  const x1 = Math.min(canvas.width, Math.ceil(b.x + b.w + pad));
+  const y1 = Math.min(canvas.height, Math.ceil(b.y + b.h + pad));
+  const region = { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+  if (region.w < 4 || region.h < 4) return false;
+
+  const base = { sourceId: swap.sourceId, source: swap.bitmap, sourceMesh: swap.sourceMesh, targetMesh, region };
+  const first = warpFace(base);
+  if (!first) return false;
+
+  // Match the source's skin tone/lighting to the target's.
+  const tm = meanInOval(canvas, region, targetMesh, true);
+  const sm = meanInOval(first, region, targetMesh, false);
+  const gain = tm.map((t, i) => clamp(t / Math.max(1, sm[i]), 0.5, 2)) as [number, number, number];
+  const warped = warpFace({ ...base, gain }) ?? first;
+
+  // Feathered oval mask.
+  const featherPx = (clamp(feather, 0, 100) / 100) * Math.min(b.w, b.h) * 0.14;
+  const mask = createCanvas(region.w, region.h);
+  const mctx = getCtx(mask);
+  if (featherPx > 0.5 && supportsCanvasFilter()) mctx.filter = `blur(${featherPx / 2}px)`;
+  mctx.fillStyle = '#fff';
+  ovalPath(mctx, targetMesh, region.x, region.y, 1, 1, featherPx);
+  mctx.fill();
+  mctx.filter = 'none';
+
+  const wctx = getCtx(warped);
+  wctx.globalCompositeOperation = 'destination-in';
+  wctx.drawImage(mask, 0, 0);
+  wctx.globalCompositeOperation = 'source-over';
+  getCtx(canvas).drawImage(warped, region.x, region.y);
+  return true;
 }
