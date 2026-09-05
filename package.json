@@ -72,7 +72,8 @@
     "appId": "net.azprojects.mediabox",
     "productName": "MediaBox",
     "directories": {
-      "output": "release"
+      "output": "release",
+      "buildResources": "build"
     },
     "files": [
       "dist/**",
@@ -91,7 +92,8 @@
       "files": [
         "!node_modules/onnxruntime-node/bin/napi-v6/win32/**",
         "!node_modules/onnxruntime-node/bin/napi-v6/linux/**"
-      ]
+      ],
+      "icon": "build/icon.png"
     },
     "win": {
       "target": [
@@ -101,7 +103,8 @@
       "files": [
         "!node_modules/onnxruntime-node/bin/napi-v6/darwin/**",
         "!node_modules/onnxruntime-node/bin/napi-v6/linux/**"
-      ]
+      ],
+      "icon": "build/icon-win.png"
     },
     "linux": {
       "target": [
@@ -111,7 +114,8 @@
       "files": [
         "!node_modules/onnxruntime-node/bin/napi-v6/darwin/**",
         "!node_modules/onnxruntime-node/bin/napi-v6/win32/**"
-      ]
+      ],
+      "icon": "build/icon.png"
     },
     "npmRebuild": false
   }

@@ -108,6 +108,7 @@ pnpm desktop:dist:linux # Linux: AppImage
 pnpm desktop:smoke   # headless end-to-end check (hidden window)
 ```
 
+- Build output goes to `release/` (git-ignored): the `.app`/`.dmg` on macOS, `Setup.exe`/zip on Windows, AppImage on Linux. App icons live in `build/` and are converted to `.icns`/`.ico` by electron-builder.
 - Windows builds use DirectML for the neural engine when available; unsigned installers will show a SmartScreen warning until you sign them (set `CSC_LINK` / `CSC_KEY_PASSWORD` for electron-builder).
 - The app is served from a privileged `app://` scheme so WASM, WebGPU and module loading behave exactly as on the web.
 - The neural engine's models are **not bundled**. The first time you choose *Swap → Neural*, the app explains their licence and downloads them (about 730 MB) into the user data folder: `arcface_w600k_r50.onnx` and `inswapper_128.onnx`, fetched from the FaceFusion assets releases. Set `MEDIABOX_MODEL_DIR` to point at an existing copy.
