@@ -76,20 +76,6 @@ Re-run the step at any time with `pnpm setup:assets`. These files are git-ignore
 
 Try it with the bundled samples — the “Try the sample photo / video” buttons on the start screen load a public-domain 1927 group photo with 29 faces and a short clip generated from it (`public/samples/`, shipped with the build).
 
-### Deploying
-
-The build in `dist/` is static — any static host works. `public/_headers` (honoured by Cloudflare Pages) and the Vite dev/preview servers send `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp`, which enable multi-threaded WASM for a faster CPU fallback on machines without WebGPU; replicate them on other hosts if you can.
-
-Static hosts such as Cloudflare Pages cap single files at 25 MiB. The ONNX Runtime WebGPU build is larger, so `pnpm build` splits it into parts (`scripts/split-large-assets.mjs`) that the app fetches and reassembles into a Blob at start-up — no external hosting involved.
-
-**Cloudflare Pages, scripted.** Copy `.env.example` to `.env`, fill in an API token (Account → Cloudflare Pages: Edit; Zone → DNS: Edit and Zone: Read for your zone) and your Account ID, then:
-
-```bash
-pnpm deploy:cloudflare
-```
-
-The script verifies the token, builds, creates the Pages project if needed, uploads `dist/` with wrangler, attaches the custom domain and creates/updates the proxied CNAME record. It uses only the values in `.env`, never a wrangler login session.
-
 ### Browser support
 
 - **Chrome / Edge 113+** (and other Chromium browsers): full experience — WebGPU inference, WebCodecs decode/encode, faster-than-realtime export.
@@ -113,6 +99,27 @@ pnpm desktop:smoke   # headless end-to-end check (hidden window)
 - The neural engine's models are **not bundled**. The first time you choose *Swap → Neural*, the app explains their licence and downloads them (about 730 MB) into the user data folder: `arcface_w600k_r50.onnx` and `inswapper_128.onnx`, fetched from the FaceFusion assets releases. Set `MEDIABOX_MODEL_DIR` to point at an existing copy.
 - Faces are aligned in the renderer and sent to the main process over IPC as float tensors; results are pasted back with a feathered mask. About 100 ms per face on Apple silicon.
 - `desktop/src/neural/onnxInitializer.ts` reads inswapper's embedding-mapping matrix straight out of the ONNX file, so no Python tooling is needed.
+
+## Deployment
+
+The build in `dist/` is static — any static host works. `public/_headers` (honoured by Cloudflare Pages) and the Vite dev/preview servers send `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp`, which enable multi-threaded WASM for a faster CPU fallback on machines without WebGPU; replicate them on other hosts if you can.
+
+Static hosts such as Cloudflare Pages cap single files at 25 MiB. The ONNX Runtime WebGPU build is larger, so `pnpm build` splits it into parts (`scripts/split-large-assets.mjs`) that the app fetches and reassembles into a Blob at start-up — no external hosting involved.
+
+### Cloudflare Pages (scripted)
+
+The deploy script is `scripts/deploy-cloudflare.mjs`, run through pnpm so it picks up `.env`:
+
+1. Copy `.env.example` to `.env`.
+2. Fill in `CLOUDFLARE_API_TOKEN` (custom token with Account → Cloudflare Pages: Edit; Zone → DNS: Edit and Zone → Zone: Read for your zone), `CLOUDFLARE_ACCOUNT_ID`, and adjust the project/zone/domain names.
+3. Run:
+
+```bash
+pnpm deploy:cloudflare               # build + deploy
+pnpm deploy:cloudflare --skip-build  # redeploy the existing dist/
+```
+
+The script verifies the token, builds, creates the Pages project if needed, uploads `dist/` with wrangler, attaches the custom domain and creates/updates the proxied CNAME record. It uses only the values in `.env`, never a wrangler login session.
 
 ## How it works
 
