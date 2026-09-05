@@ -22,7 +22,7 @@
   },
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "tsc -b && vite build && node scripts/split-large-assets.mjs",
     "lint": "oxlint src desktop/src",
     "preview": "vite preview",
     "postinstall": "node scripts/setup-assets.mjs",
@@ -34,7 +34,8 @@
     "desktop:check": "tsc -p tsconfig.desktop.json --noEmit",
     "desktop:dist:win": "pnpm desktop:build && electron-builder --win --x64",
     "desktop:dist:mac": "pnpm desktop:build && electron-builder --mac",
-    "desktop:dist:linux": "pnpm desktop:build && electron-builder --linux"
+    "desktop:dist:linux": "pnpm desktop:build && electron-builder --linux",
+    "deploy:cloudflare": "node --env-file=.env scripts/deploy-cloudflare.mjs"
   },
   "dependencies": {
     "onnxruntime-node": "^1.29.0"
@@ -56,6 +57,7 @@
     "react-dom": "^19.2.8",
     "typescript": "~6.0.2",
     "vite": "^8.2.2",
+    "wrangler": "^4.129.0",
     "zustand": "^5.0.15"
   },
   "packageManager": "pnpm@10.24.0",
