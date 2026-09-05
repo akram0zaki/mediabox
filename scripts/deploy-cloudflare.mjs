@@ -50,14 +50,18 @@ if (!existsSync('dist/index.html')) throw new Error('dist/ is missing; run pnpm 
 
 // 3. Pages project.
 step(`Ensuring Pages project "${project}"`);
+let pagesProject;
 try {
-  await cf('GET', `/accounts/${account}/pages/projects/${project}`);
+  pagesProject = await cf('GET', `/accounts/${account}/pages/projects/${project}`);
   console.log('  exists');
 } catch (err) {
   if (err.status !== 404) throw err;
-  await cf('POST', `/accounts/${account}/pages/projects`, { name: project, production_branch: 'main' });
+  pagesProject = await cf('POST', `/accounts/${account}/pages/projects`, { name: project, production_branch: 'main' });
   console.log('  created');
 }
+// The *.pages.dev host may carry a suffix when the plain name is taken (e.g. mediabox-abc1.pages.dev).
+const pagesHost = pagesProject.subdomain || `${project}.pages.dev`;
+console.log(`  host ${pagesHost}`);
 
 // 4. Upload with wrangler, passing credentials explicitly through the environment.
 step('Uploading dist/ with wrangler');
@@ -84,7 +88,7 @@ step(`Ensuring DNS record for ${domain}`);
 const zones = await cf('GET', `/zones?name=${encodeURIComponent(zoneName)}`);
 if (!zones.length) throw new Error(`Zone ${zoneName} not found for this token`);
 const zoneId = zones[0].id;
-const target = `${project}.pages.dev`;
+const target = pagesHost;
 const records = await cf('GET', `/zones/${zoneId}/dns_records?name=${encodeURIComponent(domain)}`);
 const existing = records.find((r) => r.type === 'CNAME' || r.type === 'A' || r.type === 'AAAA');
 if (!existing) {
